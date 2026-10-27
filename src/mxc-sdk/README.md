@@ -186,6 +186,12 @@ the configured diagnostic sink. `user_profile_policy` discovers standard
 per-user tool locations, and `temporary_files_policy` returns existing
 temporary storage without creating directories.
 
+On Windows, finding `pwsh.exe` on `PATH` adds the PSReadLine history directory
+as read-write. Discovery does not implicitly grant read access to a drive root.
+
+For PowerShell startup failures, see
+[troubleshooting](https://github.com/microsoft/mxc/blob/main/docs/troubleshooting.md#powershell-startup).
+
 ## Internal modules and executor binaries
 
 ### Experimental MicroVM support

@@ -193,7 +193,7 @@ describe('getAvailableToolsPolicy - PowerShell discovery', () => {
 
     /** Create a temp directory containing a fake pwsh.exe and return its path. */
     const createFakePwshDir = (): string => {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mxc-test-'));
+        tmpDir = fs.mkdtempSync(path.join(import.meta.dirname, 'mxc-test-'));
         fs.writeFileSync(path.join(tmpDir, 'pwsh.exe'), '');
         return tmpDir;
     };
@@ -209,15 +209,15 @@ describe('getAvailableToolsPolicy - PowerShell discovery', () => {
         }
     });
 
-    it('should add system root to readonlyPaths when pwsh.exe is on PATH', { skip: isLinux }, () => {
+    it('should keep PowerShell reads scoped to the discovered tool directory', { skip: isLinux }, () => {
         mockWindows();
         const pwshDir = createFakePwshDir();
-        const env = { PATH: pwshDir, USERPROFILE: 'C:\\Users\\TestUser' };
-        const result = getAvailableToolsPolicy(env);
-        assert.ok(
-            result.readonlyPaths.some(p => /^[a-z]:\\$/i.test(p)),
-            'System root (e.g. C:\\) should be in readonlyPaths when pwsh.exe is on PATH',
-        );
+        for (const SystemDrive of [undefined, '', 'Z:']) {
+            const result = getAvailableToolsPolicy({
+                PATH: pwshDir, USERPROFILE: 'C:\\Users\\TestUser', SystemDrive,
+            });
+            assert.deepStrictEqual(result.readonlyPaths, [path.resolve(pwshDir)]);
+        }
     });
 
     it('should add PSReadLine dir to readwritePaths when pwsh.exe is on PATH', { skip: isLinux }, () => {
@@ -266,10 +266,7 @@ describe('getAvailableToolsPolicy - PowerShell discovery', () => {
         const pwshDir = createFakePwshDir();
         const env = { PATH: pwshDir };
         const result = getAvailableToolsPolicy(env);
-        assert.ok(
-            result.readonlyPaths.some(p => /^[a-z]:\\$/i.test(p)),
-            'System root should still be in readonlyPaths',
-        );
+        assert.deepStrictEqual(result.readonlyPaths, [path.resolve(pwshDir)]);
         assert.strictEqual(result.readwritePaths.length, 0,
             'readwritePaths should be empty without USERPROFILE',
         );
