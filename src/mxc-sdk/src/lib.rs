@@ -53,7 +53,7 @@
 //! WSLC requires the crate's `wslc` build feature, and IsolationSession
 //! requires the `isolation_session` build feature. A WSLC process reads
 //! end-of-file on stdin, and [`MxcProcess::take_stdin`] returns `None` for it,
-//! unless it was started in a provisioned container by
+//! unless it was started by [`v1::spawn_with_stdin`] or
 //! [`v1::container::spawn_in_container_with_stdin`].
 //! IsolationSession is also available through the typed lifecycle API.
 //!
@@ -121,7 +121,7 @@
 //! [`v1::spawn`] or [`v1::container::spawn_in_container`], callers
 //! can take the streams from [`MxcProcess`] or let `wait` drain and discard any
 //! stream they did not take. WSLC exposes stdin only for
-//! [`v1::container::spawn_in_container_with_stdin`].
+//! [`v1::spawn_with_stdin`] and [`v1::container::spawn_in_container_with_stdin`].
 //!
 //! [`v1::spawn_with_pty`] allocates a caller-controlled PTY for create-and-run
 //! execution on supported backends, including IsolationSession, Bubblewrap, LXC,
@@ -328,9 +328,22 @@ pub mod v1 {
     /// Returns a [`MxcProcess`] handle for live bidirectional stdio and termination;
     /// no pty is allocated. Any stdout/stderr stream the caller does not
     /// `take_*` is drained and discarded by [`wait`](MxcProcess::wait).
+    ///
+    /// A WSLC process started this way reads end-of-file on stdin; use
+    /// [`spawn_with_stdin`] to give it input.
     pub fn spawn(request: ContainerRequest, options: SpawnOptions) -> Result<MxcProcess, Error> {
         let prepared = crate::policy::prepare_creation_request(&request, options.telemetry)?;
-        crate::mxc_engine::spawn_execution_request(&prepared.inner).map(MxcProcess::new)
+        crate::mxc_engine::spawn_execution_request(&prepared.inner, false).map(MxcProcess::new)
+    }
+
+    /// Spawn a [`ContainerRequest`] with a writable stdin, which
+    /// [`MxcProcess::take_stdin`] returns.
+    pub fn spawn_with_stdin(
+        request: ContainerRequest,
+        options: SpawnOptions,
+    ) -> Result<MxcProcess, Error> {
+        let prepared = crate::policy::prepare_creation_request(&request, options.telemetry)?;
+        crate::mxc_engine::spawn_execution_request(&prepared.inner, true).map(MxcProcess::new)
     }
 
     /// Spawn a [`ContainerRequest`] attached to a caller-controlled PTY.
@@ -394,7 +407,18 @@ pub mod __ffi {
         request_json: &str,
         experimental: bool,
     ) -> Result<MxcProcess, Error> {
-        crate::mxc_engine::spawn_one_shot_json(request_json, experimental).map(MxcProcess::new)
+        crate::mxc_engine::spawn_one_shot_json(request_json, experimental, false)
+            .map(MxcProcess::new)
+    }
+
+    /// [`spawn_container_json`] with a writable stdin, which
+    /// [`MxcProcess::take_stdin`] returns.
+    pub fn spawn_container_with_stdin_json(
+        request_json: &str,
+        experimental: bool,
+    ) -> Result<MxcProcess, Error> {
+        crate::mxc_engine::spawn_one_shot_json(request_json, experimental, true)
+            .map(MxcProcess::new)
     }
 
     /// Spawn an exact-version JSON request attached to a caller-controlled PTY.
