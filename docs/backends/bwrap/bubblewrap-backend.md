@@ -1019,6 +1019,18 @@ isolated wrapper that removes `--die-with-parent`, then checks explicit
 kill, timeout, and handle-drop cleanup. This reproduces the absence of
 parent-death protection during startup without relying on a scheduling race.
 
+## Troubleshooting
+
+These failures carry the `backend_error` code and exit `-1`.
+
+| Message | Meaning |
+|---|---|
+| `Bubblewrap (bwrap) is not installed or not on PATH` / version too old | The host has no usable Bubblewrap; install `bubblewrap` 0.5+ |
+| `requires 'slirp4netns' on PATH` / `requires unprivileged user and network namespaces` | The host cannot provide the sandbox network |
+| `script_code is empty` / `must not carry credentials` / an egress or proxy refusal | The request is at fault; change it and retry |
+| `failed to spawn bwrap` / `failed to allocate PTY` / proxy namespace start failure | The request was accepted but the launch faulted |
+| `failed to wrap stdio pipes` | The sandbox started and then faulted |
+
 ## Limitations
 
 - **Linux only** — Bubblewrap requires Linux kernel namespaces
