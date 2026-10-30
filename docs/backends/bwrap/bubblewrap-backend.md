@@ -767,7 +767,7 @@ shared-host-network behavior.
 
 ### How it works
 
-0. Before anything is launched, `validate` probes the host tools this mode
+0. Before a launch, the runner checks the host tools this mode
    depends on — `slirp4netns`, `unshare` (checked for `--map-current-user` and
    `--keep-caps`), `sh`, `nsenter`, `ip`, `iptables`, `ip6tables`, `iptables-restore`,
    `ip6tables-restore`, and `sleep`, found as described in
@@ -785,6 +785,10 @@ shared-host-network behavior.
    a different path is probed again before it runs, and failures are not
    reused, so installing the missing tool takes effect without a restart. The
    supervisor runs each tool from the path the probe checked.
+   Standalone validation and dry runs also
+   try creating disposable user and network namespaces and running `sh`. A
+   launch does not repeat that allocation: it checks namespace availability
+   when it starts the supervisor and Bubblewrap.
 1. The caller starts the proxy and names its loopback endpoint with
    `runtimeConfig.networkProxy`. The parser admits `localhost`, `127.0.0.1`,
    or `[::1]`; Bubblewrap rejects `[::1]` because its gateway reaches only

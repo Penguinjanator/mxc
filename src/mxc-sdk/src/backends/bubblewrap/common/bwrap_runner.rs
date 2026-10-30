@@ -94,7 +94,26 @@ impl SandboxBackend for BubblewrapScriptRunner {
     }
 
     fn validate(&self, request: &ExecutionRequest) -> Result<(), ScriptResponse> {
-        self.validate_prepared(request).map(|_| ())
+        let launch = self.validate_prepared(request)?;
+        let use_case = match ResolvedNetworkMode::from_request(
+            request,
+            request.policy.network_proxy.is_enabled(),
+        ) {
+            ResolvedNetworkMode::ProxyOnly => {
+                Some(proxy_network::PrivateNetworkUse::ProxyOnlyEgress)
+            }
+            ResolvedNetworkMode::FirewallEnforced => {
+                Some(proxy_network::PrivateNetworkUse::FirewallEnforcement)
+            }
+            _ => None,
+        };
+        if let Some(use_case) = use_case {
+            if let Some(tools) = launch.network_tools.as_ref() {
+                proxy_network::probe_private_namespaces(tools, use_case)
+                    .map_err(|error| ScriptResponse::error(&error))?;
+            }
+        }
+        Ok(())
     }
 
     fn spawn(
@@ -172,7 +191,7 @@ struct ValidatedLaunch {
 }
 
 impl BubblewrapScriptRunner {
-    /// `validate`, plus the egress plan and host tools it checked.
+    /// Validate the request and prepare its egress plan and host tools.
     fn validate_prepared(
         &self,
         request: &ExecutionRequest,
@@ -698,6 +717,12 @@ impl BubblewrapScriptRunner {
             }
             let startup_result = startup
                 .child_pid(&mut child)
+                .map_err(|error| {
+                    format!(
+                        "{error}. If Bubblewrap cannot create a network namespace, \
+                         check user.max_net_namespaces and the host's namespace policy"
+                    )
+                })
                 .and_then(|child_pid| {
                     let network = proxy_network.as_mut().ok_or_else(|| {
                         "Bubblewrap: proxy network lifecycle disappeared during startup".to_string()
@@ -709,6 +734,11 @@ impl BubblewrapScriptRunner {
             if let Err(error) = startup_result {
                 let _ = child.kill();
                 let _ = child.wait();
+                let error = match proxy_network::startup_output(&mut child, pty.as_ref()) {
+                    Ok(detail) if !detail.is_empty() => format!("{error}: {detail}"),
+                    Ok(_) => error,
+                    Err(detail) => format!("{error}; {detail}"),
+                };
                 stop_proxy_network(&mut proxy_network, logger);
                 return Err(ScriptResponse::failed(
                     FailurePhase::PostLaunchFailed,
