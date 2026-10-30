@@ -172,6 +172,16 @@ Node create-and-run and lifecycle suites from the SDK bundle. The SDK suites ski
 no tests is reported as a failure, so a WSLC host can never pass on skipped SDK
 tests.
 
+Bubblewrap, LXC, and WSLC also run the prebuilt
+`mxc-filesystem-probe-tests` executable from their build artifact. These public
+SDK regressions block each policy probe in a subprocess, require a bounded
+path-specific rejection, and check that no workload ran. They cover both shared
+validation and backend-specific deny/mount/overlap probes; WSLC also covers
+container provisioning. LXC mount cases run as root against an empty, stopped
+container in private storage and verify cleanup. The blocked-call hook is test-only. See
+[filesystem probe request deadlines](pull-requests.md#filesystem-probe-request-deadlines)
+for local commands and watchdog behavior.
+
 ProcessContainer's required V1.Dev cases cover capture and bidirectional
 pipes in Rust, .NET, and Node, plus Node's executor-backed PTY. Rust and .NET
 direct PTY cases run in IsolationSession. Node's `dev.test.js` also runs
