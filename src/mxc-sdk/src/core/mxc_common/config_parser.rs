@@ -570,6 +570,10 @@ fn deserialize_development_request(
                     deserialize_development_root(json, "IsolationSession provision", "1.1", true)
                         .map(ProvisionRequest::IsolationSession)
                 }
+                Containment::MicroVm => {
+                    deserialize_development_root(json, "MicroVM provision", "1.1", true)
+                        .map(ProvisionRequest::MicroVm)
+                }
                 Containment::Wslc => {
                     deserialize_development_root(json, "WSLC provision", "1.1", true)
                         .map(ProvisionRequest::Wslc)
@@ -1295,6 +1299,7 @@ fn state_aware_containment_from_id(sandbox_id: &str) -> Option<wire::Containment
         "wslc" => Some(wire::Containment::Wslc),
         "wsb" => Some(wire::Containment::WindowsSandbox),
         "iso" => Some(wire::Containment::IsolationSession),
+        "microvm" => Some(wire::Containment::Microvm),
         _ => None,
     }
 }
@@ -1375,6 +1380,8 @@ fn normalize_common_request_ir(
     require_process: bool,
 ) -> Result<ExecutionRequest, WxcError> {
     let _ignored_metadata = (&cfg.schema, &cfg.comment);
+    let microvm_memory_mib = cfg.microvm.as_ref().and_then(|config| config.memory_mib);
+    crate::mxc_common::models::MicroVmProvisionConfig::validate_memory_mib(microvm_memory_mib)?;
 
     // `phase` / `sandboxId` are state-aware-only fields. The state-aware path
     // consumes them before delegating here, so if either is still present the
@@ -1715,6 +1722,8 @@ fn normalize_common_request_ir(
         test_feature,
         windows_sandbox,
         hyperlight,
+        microvm_image: cfg.microvm.map(|config| config.image),
+        microvm_memory_mib,
         experimental_enabled: false,
         dry_run: false,
     })
@@ -1737,6 +1746,7 @@ fn normalize_state_aware(
                 StateAwareOperation::Provision(provision) => Some(match provision {
                     StateAwareProvision::IsolationSession(_) => wire::Containment::IsolationSession,
                     StateAwareProvision::WindowsSandbox => wire::Containment::WindowsSandbox,
+                    StateAwareProvision::MicroVm(_) => wire::Containment::Microvm,
                     StateAwareProvision::Wslc(_) => wire::Containment::Wslc,
                 }),
                 StateAwareOperation::Start { .. }
@@ -1901,7 +1911,7 @@ mod tests {
 
         for process_container in [r#"{}"#, r#"{"leastPrivilege":false}"#] {
             let json = format!(
-                r#"{{"version":"1.1.0-alpha","containment":"microvm","process":{{"commandLine":"echo hello"}},"processContainer":{process_container}}}"#
+                r#"{{"version":"1.1.0-alpha","containment":"microvm","microvm":{{"image":"docker.io/library/python:3.12-alpine"}},"process":{{"commandLine":"echo hello"}},"processContainer":{process_container}}}"#
             );
             let error = load_mxc_request_from_json(&json, &mut test_logger()).unwrap_err();
             assert!(matches!(error, ParseError::OneShot(_)), "{error:?}");
@@ -1911,6 +1921,7 @@ mod tests {
         let json = r#"{
             "version": "1.1.0-alpha",
             "containment": "microvm",
+            "microvm": {"image": "docker.io/library/python:3.12-alpine"},
             "process": {"commandLine": "echo hello"}
         }"#;
         let MxcRequest::OneShot(request) =
@@ -1941,6 +1952,10 @@ mod tests {
                     "containment": containment,
                     "process": {"commandLine": "echo hello"}
                 });
+                if containment == "microvm" {
+                    json["microvm"] =
+                        serde_json::json!({"image": "docker.io/library/python:3.12-alpine"});
+                }
                 if let Some(fallback) = fallback {
                     json["fallback"] = fallback;
                 }
@@ -2023,6 +2038,7 @@ mod tests {
     enum ProvisionSnapshot {
         IsolationSession(Option<Option<String>>),
         WindowsSandbox,
+        MicroVm(Option<Option<u32>>),
         Wslc(Option<(Option<String>, Option<String>)>),
     }
 
@@ -2045,6 +2061,9 @@ mod tests {
                             StateAwareProvision::WindowsSandbox => {
                                 ProvisionSnapshot::WindowsSandbox
                             }
+                            StateAwareProvision::MicroVm(config) => ProvisionSnapshot::MicroVm(
+                                config.as_ref().map(|config| config.memory_mib),
+                            ),
                             StateAwareProvision::Wslc(config) => {
                                 ProvisionSnapshot::Wslc(config.as_ref().map(|config| {
                                     (config.image.clone(), config.image_tar_path.clone())
